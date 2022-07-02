@@ -17,6 +17,7 @@ from selenium.webdriver.common.by import By  # selector helper
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
 
 # Time library
 import time  # access to sleep
@@ -103,39 +104,41 @@ class Order:
 
         # Davinci360 part
         browser = webdriver.Safari()
-        browser.implicitly_wait(10)  # Implicitly wait 3 seconds for each interaction
         browser.get(dv["address"])
 
         browser.find_element(By.NAME, "email").send_keys(dv["username"])
         browser.find_element(By.NAME, "pwd").send_keys(dv["password"])
         browser.find_element(By.NAME, "submit").click()
-        time.sleep(4)
 
+        WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.XPATH, "//div[@id='NavBarToolBar']/span")))
         browser.find_element(By.XPATH, "//div[@id='NavBarToolBar']/span").click()
         browser.find_element(By.XPATH, "//ul[@id='mnuMainSwitch']/li[4]").click()
 
-        # There is an alert pop-up
+        # Handle alert pop-up
         try:
             WebDriverWait(browser, 3).until(EC.alert_is_present(), "Timed out waiting for PA creation" + "confirmation popup to appear.")
             browser.switch_to.alert.dismiss()  # Alert accepted
             print("Alert dismissed")
         except TimeoutException:
             print("No alert")
-        time.sleep(1)
 
+        WebDriverWait(browser, 5).until(EC.presence_of_element_located((By.XPATH, "//tr[@id='lstReports_53']/td")))
         browser.find_element(By.XPATH, "//tr[@id='lstReports_53']/td").click()
-        time.sleep(3)
 
         # Get report
         browser.find_element(By.ID, "txtON").send_keys(self.receipt)
-        browser.find_element(By.XPATH, "//input[@value='View Report']").click()
-        browser.find_element(By.XPATH, "//input[@value='View Report']").click()
-        time.sleep(2)
+        view_report_btn = browser.find_element(By.XPATH, "//input[@value='View Report']")
+        browser.execute_script("arguments[0].click();", view_report_btn)
 
         # Go to report tab
+        def open_reports(throwaway):
+            browser.find_element(By.XPATH, "//input[@value='View Report']").click()
+            return len(browser.window_handles) > 1
+
+        WebDriverWait(browser, 10).until(open_reports)  # Waits until other tab appears
         p = browser.current_window_handle
         children = browser.window_handles
-        print(len(children))
+        print(f"{len(children)} tabs detected")
         for handle in children:
             if handle != p:  # Presuming handles ordered chronologically
                 browser.switch_to.window(handle)
@@ -150,10 +153,47 @@ class Order:
 
         pdfkit.from_file(f"{inspath}.html", f"{inspath}.pdf")
 
-        browser.close()
-        print("Done.")
+        browser.quit()
+        print("Done part 1/2")
 
+        time.sleep(1)
+        # Leadperfection part
+        browser = webdriver.Safari()
+        browser.get(lp["address"])
 
+        # login
+        browser.find_element(By.XPATH, "//input[@id='txtUserName']").send_keys(lp["username"])
+        browser.find_element(By.XPATH, "//input[@id='txtPassword']").send_keys(lp["password"])
+        browser.find_element(By.ID, "btnLogin").click()
+        time.sleep(1)
+
+        browser.maximize_window()  # Show buttons
+        time.sleep(1)
+
+        # Navigate to job panel
+        prod_btn = browser.find_element(By.XPATH, "//ul/li[4]/a[@class='nav-link nav-toggle ']")
+        a = ActionChains(browser)
+        a.move_to_element(prod_btn).perform()
+        time.sleep(1)
+
+        job_btn = browser.find_element(By.XPATH, "//ul/li[4]/ul/li[1]/a[@href='JobFilters.html?BC=Production|Job Search']")
+        a.move_to_element(job_btn).click().perform()
+        time.sleep(1)
+
+        # Enter job number
+        browser.find_element(By.ID, "srch_jobnumber").send_keys(self.num)
+        browser.find_element(By.ID, "jobSearchButton").click()
+        time.sleep(1)
+
+        # Go to Documents
+        browser.find_element(By.ID, "menuDocuments").click()
+        time.sleep(1)
+        
+        # Open upload
+        browser.find_element(By.XPATH, "//div[@class='doc-box box-wth dropzone']").click()
+        time.sleep(1)
+
+        print("Done part 2/2")
 
 if __name__ == "__main__":
     assert len(sys.argv) == 2, "Usage: [python interpreter alias] autowork.py /path/to/file"
